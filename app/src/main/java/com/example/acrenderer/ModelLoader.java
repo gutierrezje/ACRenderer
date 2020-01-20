@@ -9,13 +9,15 @@ import java.io.InputStreamReader;
 import java.util.Vector;
 
 public class ModelLoader {
-    private Vector<Vec3> vertices;
-    private Vector<Vector<Integer>> faces;
     private static final String TAG = "ModelLoader";
+    public float[] vPositions;
+    public float[] vTextures;
+    public float[] vNormals;
+    private int faceCount;
 
     ModelLoader(Context context, String file) {
-        vertices = new Vector<>();
-        faces = new Vector<>();
+        Vector<Vector<Integer>> faces = new Vector<>();
+        Vector<Float> vertices = new Vector<>();
 
         BufferedReader reader = null;
         try {
@@ -29,29 +31,28 @@ public class ModelLoader {
                 if (line.startsWith("v ")) {
                     data = line.substring(2).split(" ");
                     // position vertex
-                    Vec3 vertex = new Vec3(
-                            Float.parseFloat(data[0]),
-                            Float.parseFloat(data[1]),
-                            Float.parseFloat(data[2])
-                    );
-                    Log.d(TAG, "" + vertex);
-                    vertices.add(vertex);
+                    vertices.add(Float.parseFloat(data[0]));
+                    vertices.add(Float.parseFloat(data[1]));
+                    vertices.add(Float.parseFloat(data[2]));
                 }
+                // TODO read in other types of vertex data
                 // reading face data
                 else if (line.startsWith("f ")) {
                     data = line.substring(2).split(" ");
+
                     Vector<Integer> face = new Vector<>();
                     // parsing vertex, texture, normal indices
-                    for (String vtn : data) {
-                        face.add(Integer.parseInt(vtn.split("/")[0]) - 1);
+                    for (String indices : data) {
+                        String[] vtn = indices.split("/");
+                        face.add(Integer.parseInt(vtn[0]) - 1);
+                        face.add(Integer.parseInt(vtn[1]) - 1);
+                        face.add(Integer.parseInt(vtn[2]) - 1);
                     }
-                    Log.d(TAG, "" + face);
                     faces.add(face);
                 }
                 line = reader.readLine();
             }
-            Log.d(TAG, "Face #: " + numFaces());
-            Log.d(TAG, "Vertex #: " + numVertices());
+
         }
         catch (IOException e) {
             Log.e(TAG, "Unable to load or read file.");
@@ -66,21 +67,29 @@ public class ModelLoader {
                 }
             }
         }
-    }
 
-    public int numVertices() {
-        return vertices.size();
+        faceCount = faces.size();
+        vPositions = new float[faceCount * 9];
+        int positionIdx = 0;
+        for (Vector<Integer> face : faces) {
+            for (int i = 0; i < 3; i++) {
+                int index = 3 * face.get(3*i);
+                vPositions[positionIdx++] = vertices.get(index++);
+                vPositions[positionIdx++] = vertices.get(index++);
+                vPositions[positionIdx++] = vertices.get(index);
+            }
+        }
     }
 
     public int numFaces() {
-        return faces.size();
+        return faceCount;
     }
 
-    public Vec3 getVertex(int index) {
-        return vertices.get(index);
-    }
-
-    public Vector<Integer> getFace(int index) {
-        return faces.get(index);
-    }
+//    public float getVertex(int index) {
+//        return vPositions[index];
+//    }
+//
+//    public Vector<Integer> getFace(int index) {
+//        return faces.get(index);
+//    }
 }

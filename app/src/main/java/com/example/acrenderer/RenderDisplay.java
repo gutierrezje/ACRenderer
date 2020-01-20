@@ -5,35 +5,53 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
 import android.view.View;
+import android.widget.ArrayAdapter;
 
+import java.lang.reflect.Array;
+import java.util.Arrays;
+import java.util.Random;
 import java.util.Vector;
 
 public class RenderDisplay extends View {
     private final String TAG = "RenderDisplay";
+
+    private Random rand;
     private Paint currentPaint;
-    ModelLoader model;
+    private Path path;
+
     private int width;
     private int height;
 
+    private int[] screen_coords;
+    private float[] world_coords;
+    private float[] light_dir;
+
+    private float[] vPositions;
+    private float[] vTextures;
+    private float[] vNormals;
+
     public RenderDisplay(Context context, AttributeSet attrs) {
         super(context, attrs);
-        model = new ModelLoader(this.getContext(), "african_head.obj");
+        ModelLoader model = new ModelLoader(this.getContext(), "african_head.obj");
+        vPositions = model.vPositions;
 
-        // set appropriate width and height
-        DisplayMetrics displayMetrics = new DisplayMetrics();
-        ((Activity)getContext()).getWindowManager()
-                .getDefaultDisplay()
-                .getMetrics(displayMetrics);
-        width = (int)(displayMetrics.widthPixels * 0.9);
-        height = width;
+        path = new Path();
+        path.setFillType(Path.FillType.EVEN_ODD);
+
+        rand = new Random();
+
+        screen_coords = new int[6];
+        world_coords = new float[9];
+        light_dir = new float[]{0,0,-1};
 
         currentPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        currentPaint.setColor(Color.RED);
-        currentPaint.setStrokeWidth(2);
-        currentPaint.setStyle(Paint.Style.FILL_AND_STROKE);
+        currentPaint.setStrokeWidth(1);
+        currentPaint.setStyle(Paint.Style.FILL);
+
         this.invalidate();
     }
 
@@ -41,22 +59,54 @@ public class RenderDisplay extends View {
     protected void onDraw(Canvas canvas) {
         // draw objects on the screen
         super.onDraw(canvas);
+        width = getWidth();
+        height = getHeight() / 2;
         drawModel(canvas);
     }
 
     void drawModel(Canvas canvas) {
-        for (int i = 0; i < model.numFaces(); i++) {
-            Vector<Integer> face = model.getFace(i);
+        for (int i = 0; i < vPositions.length; i+=9) {
             for (int j = 0; j < 3; j++) {
-                Vec3 v0 = model.getVertex(face.get(j));
-                Vec3 v1 = model.getVertex(face.get((j + 1) % 3));
-                int x0 = (int)((v0.x + 1) * width / 2);
-                int y0 = height - (int)((v0.y + 1) * height / 2);
-                int x1 = (int)((v1.x + 1) * width / 2);
-                int y1 = height - (int)((v1.y + 1) * height / 2);
-                canvas.drawLine(x0, y0, x1, y1, currentPaint);
+                int idx = 3*j+i;
+                screen_coords[2*j]   = (int)((vPositions[idx] + 1) * width / 2);
+                screen_coords[2*j+1] = (int)((vPositions[idx+1] + 1) * height / 2);
+
+                world_coords[3*j]   = vPositions[idx];
+                world_coords[3*j+1] = vPositions[idx+1];
+                world_coords[3*j+2] = vPositions[idx+2];
+            }
+
+            float[] n = RMath.normalize(
+                    RMath.cross(
+                    RMath.sub(
+                            Arrays.copyOfRange(world_coords, 6, 9),
+                            Arrays.copyOfRange(world_coords, 0, 3)),
+                    RMath.sub(
+                            Arrays.copyOfRange(world_coords, 3, 6),
+                            Arrays.copyOfRange(world_coords, 0, 3)
+                    )));
+
+            float intensity = RMath.dot(n, light_dir);
+
+            if (intensity > 0) {
+                triangle(canvas, screen_coords,
+                        Color.rgb((int) (intensity * 255),
+                                (int) (intensity * 255),
+                                (int) (intensity * 255)));
             }
         }
+    }
+
+    void triangle(Canvas canvas, int[] points, int paintColor) {
+        currentPaint.setColor(paintColor);
+
+        path.moveTo(points[0], height - points[1]);
+        for(int i = 2; i < points.length; i+=2) {
+            path.lineTo(points[i], height - points[i+1] );
+        }
+        path.close();
+        canvas.drawPath(path, currentPaint);
+        path.reset();
     }
 
     @Override
