@@ -1,11 +1,12 @@
 package com.example.acrenderer;
 
 import android.content.Context;
+import android.content.res.Resources;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.Path;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.View;
 
 import java.util.Arrays;
@@ -14,18 +15,17 @@ public class RenderDisplay extends View {
     private final String TAG = "RenderDisplay";
 
     private Paint currentPaint;
-    private Path path;
 
-    private int width;
-    private int height;
+    private int size;
 
-    private int[] minBoundingBox;
-    private int[] maxBoundingBox;
+    private int[] minBoundBox;
+    private int[] maxBoundBox;
     private int[] clamp;
-    private int[] P;
+    private float[] P;
 
-    private int[] screenCoords;
+    private float[] screenCoords;
     private float[] worldCoords;
+    private float[] zBuffer;
     private float[] lightDir;
 
     private float[] vPositions;
@@ -37,17 +37,21 @@ public class RenderDisplay extends View {
         ModelLoader model = new ModelLoader(this.getContext(), "african_head.obj");
         vPositions = model.vPositions;
 
-        path = new Path();
-        path.setFillType(Path.FillType.EVEN_ODD);
+        Resources res = getResources();
+        size = (int)res.getDimension(R.dimen.render_display_size);
 
-        minBoundingBox = new int[2];
-        maxBoundingBox = new int[2];
-        clamp = new int[2];
-        P = new int[2];
+        minBoundBox = new int[2];
+        maxBoundBox = new int[2];
+        clamp = new int[]{size - 1, size - 1};
+        P = new float[3];
 
-        screenCoords = new int[6];
+        screenCoords = new float[9];
         worldCoords = new float[9];
-        lightDir = new float[]{0,0,-1};
+        zBuffer = new float[size * size];
+        for (int i = 0; i < zBuffer.length; i++) {
+            zBuffer[i] = -Float.MAX_VALUE;
+        }
+        lightDir = new float[]{0, 0, -1};
 
         currentPaint = new Paint();
         currentPaint.setStrokeWidth(1);
@@ -59,25 +63,17 @@ public class RenderDisplay extends View {
     protected void onDraw(Canvas canvas) {
         // draw objects on the screen
         super.onDraw(canvas);
-        width = this.getWidth();
-        height = this.getHeight();
-        clamp[0] = width;
-        clamp[1] = height;
-        canvas.scale(1, -1, width / 2, height / 2);
+        canvas.scale(1, -1, size / 2, size / 2);
         drawModel(canvas);
-
     }
 
     void drawModel(Canvas canvas) {
         for (int i = 0; i < vPositions.length; i+=9) {
-            for (int j = 0; j < 3; j++) {
-                int idx = 3*j+i;
-                screenCoords[2*j]   = (int)((vPositions[idx] + 1) * width / 2);
-                screenCoords[2*j+1] = (int)((vPositions[idx+1] + 1) * height / 2);
+            for (int j = 0; j < 9; j++) {
+                screenCoords[j] = (j % 3 == 2) ? vPositions[i+j]
+                        : (int)((vPositions[i+j] + 1) * size / 2 + 0.5);
 
-                worldCoords[3*j]   = vPositions[idx];
-                worldCoords[3*j+1] = vPositions[idx+1];
-                worldCoords[3*j+2] = vPositions[idx+2];
+                worldCoords[j] = vPositions[i+j];
             }
 
             float[] n = RMath.normalize(
@@ -101,44 +97,49 @@ public class RenderDisplay extends View {
         }
     }
 
-    void triangle(Canvas canvas, int[] points, int paintColor) {
-        currentPaint.setColor(paintColor);
-
-        minBoundingBox[0] = this.getWidth();
-        minBoundingBox[1] = this.getHeight();
-        maxBoundingBox[0] = 0;
-        maxBoundingBox[1] = 0;
+    void triangle(Canvas canvas, float[] points, int paintColor) {
+        minBoundBox[0] = size - 1;
+        minBoundBox[1] = size - 1;
+        maxBoundBox[0] = 0;
+        maxBoundBox[1] = 0;
 
         for (int i = 0; i < 3; i++) {
             for (int j = 0; j < 2; j++) {
-                minBoundingBox[j] = Math.max(0,        Math.min(minBoundingBox[j], points[2*i + j]));
-                maxBoundingBox[j] = Math.min(clamp[j], Math.max(maxBoundingBox[j], points[2*i + j]));
+                minBoundBox[j] = Math.max(0,        Math.min(minBoundBox[j], (int)points[3*i + j]));
+                maxBoundBox[j] = Math.min(clamp[j], Math.max(maxBoundBox[j], (int)points[3*i + j]));
             }
         }
 
-        for (P[0] = minBoundingBox[0]; P[0] <= maxBoundingBox[0]; P[0]++) {
-            for (P[1] = minBoundingBox[1]; P[1] <= maxBoundingBox[1]; P[1]++) {
+        for (P[0] = minBoundBox[0]; P[0] <= maxBoundBox[0]; P[0]++) {
+            for (P[1] = minBoundBox[1]; P[1] <= maxBoundBox[1]; P[1]++) {
                 float[] bc_screen = barycentric(points, P);
                 if (bc_screen[0] < 0 || bc_screen[1] < 0 || bc_screen[2] < 0) continue;
-                canvas.drawPoint(P[0], P[1], currentPaint);
+                P[2] = 0;
+                for (int i = 0; i < 3; i++)
+                    P[2] += points[3*i + 2] * bc_screen[i];
+                if (zBuffer[(int)(P[0] + P[1] * size)] < P[2]) {
+                    zBuffer[(int)(P[0] + P[1] * size)] = P[2];
+                    currentPaint.setColor(paintColor);
+                    canvas.drawPoint(P[0], P[1], currentPaint);
+                }
             }
         }
     }
 
-    float[] barycentric(int[] points, int[] P) {
+    float[] barycentric(float[] points, float[] P) {
         float[] u = RMath.cross(
-                new float[]{points[4] - points[0], points[2] - points[0], points[0] - P[0]},
-                new float[]{points[5] - points[1], points[3] - points[1], points[1] - P[1]});
-        if (Math.abs(u[2]) < 1) {
-            u[0] = -1;
-            u[1] = 1;
-            u[2] = 1;
-        }
-        else {
+                new float[]{points[6] - points[0], points[3] - points[0], points[0] - P[0]},
+                new float[]{points[7] - points[1], points[4] - points[1], points[1] - P[1]});
+        if (Math.abs(u[2]) > 1e-2) {
             float x = u[0], y = u[1], z = u[2];
             u[0] = 1 - (x + y) / z;
             u[1] = y / z;
             u[2] = x / z;
+        }
+        else {
+            u[0] = -1;
+            u[1] = 1;
+            u[2] = 1;
         }
         return u;
     }
