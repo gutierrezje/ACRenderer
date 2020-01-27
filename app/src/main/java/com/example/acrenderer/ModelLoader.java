@@ -17,7 +17,8 @@ public class ModelLoader {
 
     ModelLoader(Context context, String file) {
         Vector<Vector<Integer>> faces = new Vector<>();
-        Vector<Float> vertices = new Vector<>();
+        Vector<Float> positionVerts = new Vector<>();
+        Vector<Float> textureVerts = new Vector<>();
 
         BufferedReader reader = null;
         try {
@@ -29,11 +30,18 @@ public class ModelLoader {
             while (line != null) {
                 // reading vertex data
                 if (line.startsWith("v ")) {
-                    data = line.substring(2).split(" ");
                     // position vertex
-                    vertices.add(Float.parseFloat(data[0]));
-                    vertices.add(Float.parseFloat(data[1]));
-                    vertices.add(Float.parseFloat(data[2]));
+                    data = line.substring(2).split(" ");
+                    positionVerts.add(Float.parseFloat(data[0]));
+                    positionVerts.add(Float.parseFloat(data[1]));
+                    positionVerts.add(Float.parseFloat(data[2]));
+                }
+                if (line.startsWith("vt  ")) {
+                    // texture vertex
+                    data = line.substring(4).split(" ");
+                    Log.d(TAG, "ModelLoader: " + data[0] + data[1]);
+                    textureVerts.add(Float.parseFloat(data[0]));
+                    textureVerts.add(Float.parseFloat(data[1]));
                 }
                 // TODO read in other types of vertex data
                 // reading face data
@@ -70,26 +78,19 @@ public class ModelLoader {
 
         faceCount = faces.size();
         vPositions = new float[faceCount * 9];
-        int positionIdx = 0;
+//        vTextures = new float[faceCount * 6];
+        int positionIdx = 0, textureIdx = 0;
         for (Vector<Integer> face : faces) {
             for (int i = 0; i < 3; i++) {
                 int index = 3 * face.get(3*i);
-                vPositions[positionIdx++] = vertices.get(index++);
-                vPositions[positionIdx++] = vertices.get(index++);
-                vPositions[positionIdx++] = vertices.get(index);
+                vPositions[positionIdx++] = positionVerts.get(index++);
+                vPositions[positionIdx++] = positionVerts.get(index++);
+                vPositions[positionIdx++] = positionVerts.get(index);
+
+//                index = 2 * face.get(3*i + 1);
+//                vTextures[textureIdx++] = textureVerts.get(index++);
+//                vTextures[textureIdx++] = textureVerts.get(index);
             }
         }
     }
-
-    public int numFaces() {
-        return faceCount;
-    }
-
-//    public float getVertex(int index) {
-//        return vPositions[index];
-//    }
-//
-//    public Vector<Integer> getFace(int index) {
-//        return faces.get(index);
-//    }
 }

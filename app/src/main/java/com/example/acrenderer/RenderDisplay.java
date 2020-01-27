@@ -6,7 +6,6 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.util.AttributeSet;
-import android.util.Log;
 import android.view.View;
 
 import java.util.Arrays;
@@ -26,16 +25,31 @@ public class RenderDisplay extends View {
     private float[] screenCoords;
     private float[] worldCoords;
     private float[] zBuffer;
+
+    private float[] worldUp;
+    private float[] cameraPos;
     private float[] lightDir;
+    private float[] viewMat;
+    private float[] projectionMat;
+    private float[] cameraMat;
 
     private float[] vPositions;
     private float[] vTextures;
     private float[] vNormals;
 
+    private float[] opV1;
+    private float[] opV2;
+    private float[] opM1;
+    private float[] opM2;
+
+    private final String headObj = "african_head.obj";
+    private final String cubeObj = "cube.obj";
+
     public RenderDisplay(Context context, AttributeSet attrs) {
         super(context, attrs);
-        ModelLoader model = new ModelLoader(this.getContext(), "african_head.obj");
+        ModelLoader model = new ModelLoader(this.getContext(), headObj);
         vPositions = model.vPositions;
+        //vTextures = model.vTextures;
 
         Resources res = getResources();
         size = (int)res.getDimension(R.dimen.render_display_size);
@@ -48,13 +62,22 @@ public class RenderDisplay extends View {
         screenCoords = new float[9];
         worldCoords = new float[9];
         zBuffer = new float[size * size];
-        for (int i = 0; i < zBuffer.length; i++) {
-            zBuffer[i] = -Float.MAX_VALUE;
-        }
+        Arrays.fill(zBuffer, -Float.MAX_VALUE);
+
+        worldUp = new float[]{0,1,0};
+        cameraPos = new float[]{0.5f,0,1.6f};
         lightDir = new float[]{0, 0, -1};
+
+        viewMat = Camera.viewport(size, size);
+        projectionMat = Camera.perspective(-1, 1, -1,1,-1,1);
+        cameraMat = Camera.lookAt(cameraPos, worldUp);
+
+        opV1 = RMath.vec4();
 
         currentPaint = new Paint();
         currentPaint.setStrokeWidth(1);
+
+        //Transform.translate(vPositions, -0.5f, -0.5f, 0f);
 
         this.invalidate();
     }
@@ -69,11 +92,28 @@ public class RenderDisplay extends View {
 
     void drawModel(Canvas canvas) {
         for (int i = 0; i < vPositions.length; i+=9) {
-            for (int j = 0; j < 9; j++) {
-                screenCoords[j] = (j % 3 == 2) ? vPositions[i+j]
-                        : (int)((vPositions[i+j] + 1) * size / 2 + 0.5);
+            for (int j = 0; j < 3; j++) {
+                int idx = 3*j+i;
+                opV1[0] = vPositions[idx];
+                opV1[1] = vPositions[idx+1];
+                opV1[2] = vPositions[idx+2];
 
-                worldCoords[j] = vPositions[i+j];
+                opV2 = RMath.mvMul(
+                        RMath.mmMul(RMath.mmMul(viewMat, projectionMat), cameraMat),
+                        opV1);
+
+                screenCoords[3*j]   = opV2[0]/opV2[3];
+                screenCoords[3*j+1] = opV2[1]/opV2[3];
+                screenCoords[3*j+2] = opV2[2]/opV2[3];
+
+                worldCoords[3*j]   = vPositions[idx];
+                worldCoords[3*j+1] = vPositions[idx+1];
+                worldCoords[3*j+2] = vPositions[idx+2];
+
+//                screenCoords[j] = (j % 3 == 2) ? vPositions[i+j]
+//                        : (int)((vPositions[i+j] + 1) * size / 2 + 0.5);
+//
+//                worldCoords[j] = vPositions[i+j];
             }
 
             float[] n = RMath.normalize(
